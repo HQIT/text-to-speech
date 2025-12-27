@@ -76,14 +76,16 @@ class LocalTTSProvider(TTSProvider):
                         if voice_info.id.lower() in getattr(voice, 'id', '').lower():
                             selected_voice = voice
                             break
-                else:
-                    # 未指定 spk_id，根据默认语言从 list_voices 中选择
+                
+                # 如果没有匹配到，根据默认语言选择
+                if not selected_voice:
                     voice_infos = self.list_voices()
                     for vi in voice_infos:
                         if vi.language.lower() == self.default_language.lower():
                             for voice in voices:
                                 if vi.id.lower() in getattr(voice, 'id', '').lower():
                                     selected_voice = voice
+                                    logger.info(f"Using voice: {vi.name} ({vi.language})")
                                     break
                             if selected_voice:
                                 break
@@ -128,15 +130,14 @@ class LocalTTSProvider(TTSProvider):
             if engine_voices:
                 for i, voice in enumerate(engine_voices):
                     voice_id = voice.id if hasattr(voice, 'id') else f"voice_{i}"
-                    # 从 voice id 提取语言代码（espeak 格式：lang_code 或 lang_code/variant）
-                    lang_code = voice_id.split('/')[0].split('-')[0].lower()
-                    # 语言代码映射
-                    language_map = {'zh': 'zh', 'zho': 'zh', 'cn': 'zh', 'en': 'en', 'eng': 'en'}
-                    language = language_map.get(lang_code, 'en')
+                    voice_name = voice.name if hasattr(voice, 'name') else f"Voice {i+1}"
+                    
+                    # 从 voice 属性中提取语言
+                    language = self._detect_language(voice_id, voice_name)
                     
                     voices.append(VoiceInfo(
                         id=voice_id,
-                        name=voice.name if hasattr(voice, 'name') else f"Voice {i+1}",
+                        name=voice_name,
                         provider="local",
                         language=language,
                         gender="female" if "female" in str(voice).lower() else "male"
@@ -145,6 +146,19 @@ class LocalTTSProvider(TTSProvider):
             logger.warning(f"Failed to list voices: {e}")
         
         return voices
+    
+    def _detect_language(self, voice_id: str, voice_name: str) -> str:
+        """从 voice id 或 name 检测语言"""
+        combined = f"{voice_id} {voice_name}".lower()
+        
+        # 中文检测
+        if any(kw in combined for kw in ['zh', 'chinese', 'mandarin', 'cantonese']):
+            return 'zh'
+        # 英文检测
+        if any(kw in combined for kw in ['en', 'english', 'us', 'uk', 'gb']):
+            return 'en'
+        
+        return 'zh'  # 默认中文
     
     @property
     def name(self) -> str:

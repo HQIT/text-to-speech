@@ -26,21 +26,29 @@ def setup_logging(verbose: bool = False):
     )
 
 
-def init_default_provider(tts_url: str = None):
+def init_default_provider():
     """初始化默认 Provider"""
     logger = logging.getLogger(__name__)
-    if not registry.list_providers():
-        provider = StreamTTSProvider(url=tts_url)
-        registry.register("default", provider)
     
-    # 注册 local provider（如果可用，使用默认语言）
-    if LocalTTSProvider and not registry.get("local"):
+    # 优先注册 local provider 作为默认
+    if LocalTTSProvider and not registry.get("default"):
         try:
             local_provider = LocalTTSProvider(default_language="zh")
-            registry.register("local", local_provider)
-            logger.info("Registered TTS provider: local")
+            registry.register("default", local_provider)
+            logger.info("Registered TTS provider: default (local)")
         except Exception as e:
             logger.warning(f"Local provider not available: {e}")
+    
+    # 如果 local 不可用，回退到 stream provider
+    if not registry.get("default"):
+        provider = StreamTTSProvider()
+        registry.register("default", provider)
+        logger.info("Registered TTS provider: default (stream)")
+    
+    # 同时注册 stream provider 供选择
+    if not registry.get("stream"):
+        stream_provider = StreamTTSProvider()
+        registry.register("stream", stream_provider)
 
 
 def list_providers_cmd():
@@ -134,16 +142,6 @@ def main():
         help="Speaker ID (hash) for voice selection (default: xiaoyan). Use --list-voices to see available IDs"
     )
     
-    parser.add_argument(
-        "--language",
-        help="Language code (e.g., zh, en). Used by local provider for voice selection"
-    )
-    
-    parser.add_argument(
-        "--tts-url",
-        help="TTS service URL (default: from TTS_URL env var)"
-    )
-    
     # Logging
     parser.add_argument(
         "-v", "--verbose",
@@ -164,7 +162,7 @@ def main():
     logger = logging.getLogger(__name__)
     
     # 初始化默认 Provider
-    init_default_provider(args.tts_url)
+    init_default_provider()
     
     # 处理 --list-providers
     if args.list_providers:
@@ -213,28 +211,15 @@ def main():
         provider_name = args.provider or "default"
         provider = registry.get(provider_name)
         
-        # 如果指定了 language 且 provider 支持 language 参数，创建新的 provider 实例
-        if args.language and provider and LocalTTSProvider:
-            # 检查是否是 LocalTTSProvider 类型
-            if isinstance(provider, LocalTTSProvider):
-                try:
-                    provider = LocalTTSProvider(default_language=args.language)
-                    logger.debug(f"Created provider with language: {args.language}")
-                except Exception as e:
-                    logger.warning(f"Failed to create provider with language {args.language}: {e}")
-                    # 使用已注册的 provider
-        
         if not provider:
             logger.error(f"Provider not found: {provider_name}")
             sys.exit(1)
         
         # Create client and convert
-        # 优先使用 provider，如果没有则使用 tts_url 创建 StreamTTSProvider
         client = TTSClient(
             content=text,
             spk_id=args.spk_id,
             provider=provider,
-            tts_url=args.tts_url,  # 仅当 provider 为 None 时使用
             callback=on_progress if args.verbose else None
         )
         
