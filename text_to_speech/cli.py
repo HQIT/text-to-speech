@@ -9,12 +9,7 @@ from pathlib import Path
 
 from .client import TTSClient, TTSResult, TTSError
 from .registry import registry
-from .providers import StreamTTSProvider
-
-try:
-    from .providers import LocalTTSProvider
-except ImportError:
-    LocalTTSProvider = None
+from .providers import StreamTTSProvider, EdgeTTSProvider
 
 
 def setup_logging(verbose: bool = False):
@@ -30,16 +25,17 @@ def init_default_provider():
     """初始化默认 Provider"""
     logger = logging.getLogger(__name__)
     
-    # 优先注册 local provider 作为默认
-    if LocalTTSProvider and not registry.get("default"):
+    # 优先使用 Edge TTS（免费且中文质量好）
+    if not registry.get("default"):
         try:
-            local_provider = LocalTTSProvider(default_language="zh")
-            registry.register("default", local_provider)
-            logger.info("Registered TTS provider: default (local)")
+            edge_provider = EdgeTTSProvider()
+            registry.register("default", edge_provider)
+            registry.register("edge", edge_provider)
+            logger.info("Registered TTS provider: default (edge)")
         except Exception as e:
-            logger.warning(f"Local provider not available: {e}")
+            logger.warning(f"Edge provider not available: {e}")
     
-    # 如果 local 不可用，回退到 stream provider
+    # 回退到 Stream
     if not registry.get("default"):
         provider = StreamTTSProvider()
         registry.register("default", provider)
@@ -138,8 +134,8 @@ def main():
     # TTS options
     parser.add_argument(
         "--spk-id",
-        default="xiaoyan",
-        help="Speaker ID (hash) for voice selection (default: xiaoyan). Use --list-voices to see available IDs"
+        default="default",
+        help="Speaker ID for voice selection (default: default). Use --list-voices to see available IDs"
     )
     
     # Logging
@@ -242,4 +238,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
